@@ -322,8 +322,10 @@
         let localStream;
         let connectionId;
         let isReceiver = true;
+        let pollingInterval;
+        let iceCandidatesQueue = [];
 
-        // Simple signaling using localStorage for demo (in production, use WebSocket server)
+        // Simple signaling using localStorage with improved synchronization
         const signalingKey = 'screen-mirror-signal-';
 
         function switchMode(mode) {
@@ -345,9 +347,15 @@
             statusDiv.className = `status ${type}`;
             statusDiv.textContent = message;
             statusDiv.style.display = 'block';
+            console.log(`[${elementId}] ${message}`);
         }
 
         async function createConnection() {
+            // Clear any existing connection
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            
             connectionId = generateId();
             
             const qrcodeDiv = document.getElementById('qrcode');
@@ -368,6 +376,10 @@
             updateStatus('⏳ Menunggu koneksi dari handphone...', 'waiting', 'receiver-status');
             document.getElementById('stopReceiverBtn').style.display = 'inline-block';
 
+            // Clear old data
+            localStorage.removeItem(signalingKey + connectionId + '-receiver');
+            localStorage.removeItem(signalingKey + connectionId + '-sender');
+
             setupReceiverConnection();
         }
 
@@ -375,57 +387,130 @@
             const configuration = {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' }
                 ]
             };
 
             peerConnection = new RTCPeerConnection(configuration);
+            iceCandidatesQueue = [];
 
+            // Handle incoming tracks
             peerConnection.ontrack = (event) => {
+                console.log('Track received!', event);
                 const video = document.getElementById('receivedVideo');
-                video.srcObject = event.streams[0];
-                document.getElementById('receiver-video-container').style.display = 'block';
-                updateStatus('✅ Terhubung! Menampilkan layar handphone...', 'connected', 'receiver-status');
-            };
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    const key = signalingKey + connectionId + '-receiver';
-                    const data = JSON.parse(localStorage.getItem(key) || '{}');
-                    data.candidates = data.candidates || [];
-                    data.candidates.push(event.candidate);
-                    localStorage.setItem(key, JSON.stringify(data));
+                if (event.streams && event.streams[0]) {
+                    video.srcObject = event.streams[0];
+                    document.getElementById('receiver-video-container').style.display = 'block';
+                    updateStatus('✅ Terhubung! Menampilkan layar handphone...', 'connected', 'receiver-status');
                 }
             };
 
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                console.log('ICE candidate (receiver):', event.candidate);
+                if (event.candidate) {
+                    iceCandidatesQueue.push(event.candidate);
+                    saveSignalData('receiver', {
+                        offer: peerConnection.localDescription,
+                        candidates: iceCandidatesQueue
+                    });
+                }
+            };
 
-            const key = signalingKey + connectionId + '-receiver';
-            localStorage.setItem(key, JSON.stringify({ offer: offer }));
+            // Monitor connection state
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Connection state (receiver):', peerConnection.connectionState);
+                if (peerConnection.connectionState === 'connected') {
+                    updateStatus('✅ Koneksi WebRTC berhasil!', 'connected', 'receiver-status');
+                } else if (peerConnection.connectionState === 'failed') {
+                    updateStatus('❌ Koneksi gagal. Coba lagi.', 'error', 'receiver-status');
+                }
+            };
 
-            pollForAnswer();
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log('ICE connection state (receiver):', peerConnection.iceConnectionState);
+            };
+
+            // Create and set offer
+            try {
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveVideo: true,
+                    offerToReceiveAudio: true
+                });
+                await peerConnection.setLocalDescription(offer);
+                
+                saveSignalData('receiver', {
+                    offer: offer,
+                    candidates: iceCandidatesQueue
+                });
+
+                console.log('Offer created and saved');
+                pollForAnswer();
+            } catch (error) {
+                console.error('Error creating offer:', error);
+                updateStatus('❌ Error: ' + error.message, 'error', 'receiver-status');
+            }
+        }
+
+        function saveSignalData(role, data) {
+            const key = signalingKey + connectionId + '-' + role;
+            localStorage.setItem(key, JSON.stringify(data));
+            console.log(`Saved signal data for ${role}:`, data);
+        }
+
+        function getSignalData(role) {
+            const key = signalingKey + connectionId + '-' + role;
+            const data = localStorage.getItem(key);
+            return data ? JSON.parse(data) : null;
         }
 
         function pollForAnswer() {
-            const interval = setInterval(() => {
-                const key = signalingKey + connectionId + '-sender';
-                const data = localStorage.getItem(key);
+            let attemptCount = 0;
+            
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+
+            pollingInterval = setInterval(async () => {
+                attemptCount++;
                 
-                if (data) {
-                    const signalData = JSON.parse(data);
-                    
-                    if (signalData.answer && peerConnection.signalingState !== 'stable') {
-                        peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.answer));
+                const signalData = getSignalData('sender');
+                console.log(`Polling attempt ${attemptCount}, found:`, signalData);
+                
+                if (signalData && signalData.answer) {
+                    try {
+                        console.log('Processing answer...');
+                        
+                        if (peerConnection.signalingState !== 'stable') {
+                            await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.answer));
+                            console.log('Remote description set');
+                        }
+                        
+                        if (signalData.candidates && signalData.candidates.length > 0) {
+                            console.log('Adding ICE candidates:', signalData.candidates.length);
+                            for (const candidate of signalData.candidates) {
+                                try {
+                                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                                } catch (e) {
+                                    console.warn('Error adding ICE candidate:', e);
+                                }
+                            }
+                        }
+                        
+                        clearInterval(pollingInterval);
+                        updateStatus('🔗 Sedang menghubungkan...', 'waiting', 'receiver-status');
+                    } catch (error) {
+                        console.error('Error processing answer:', error);
+                        updateStatus('❌ Error: ' + error.message, 'error', 'receiver-status');
                     }
-                    
-                    if (signalData.candidates) {
-                        signalData.candidates.forEach(candidate => {
-                            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                        });
-                    }
-                    
-                    clearInterval(interval);
+                }
+                
+                // Stop after 60 seconds
+                if (attemptCount > 60) {
+                    clearInterval(pollingInterval);
+                    updateStatus('⏱️ Timeout. Refresh dan coba lagi.', 'error', 'receiver-status');
                 }
             }, 1000);
         }
@@ -441,13 +526,17 @@
             connectionId = connId;
 
             try {
+                // Request screen sharing
                 localStream = await navigator.mediaDevices.getDisplayMedia({
                     video: { 
                         width: { ideal: 1920 },
-                        height: { ideal: 1080 }
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
                     },
                     audio: true
                 });
+
+                console.log('Screen capture started');
 
                 const video = document.getElementById('localVideo');
                 video.srcObject = localStream;
@@ -458,6 +547,7 @@
 
                 setupSenderConnection();
             } catch (error) {
+                console.error('Screen capture error:', error);
                 updateStatus('❌ Gagal mengakses layar: ' + error.message, 'error', 'sender-status');
             }
         }
@@ -466,67 +556,114 @@
             const configuration = {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' }
                 ]
             };
 
             peerConnection = new RTCPeerConnection(configuration);
+            iceCandidatesQueue = [];
 
+            // Add tracks to connection
             localStream.getTracks().forEach(track => {
+                console.log('Adding track:', track.kind);
                 peerConnection.addTrack(track, localStream);
             });
 
+            // Handle ICE candidates
             peerConnection.onicecandidate = (event) => {
+                console.log('ICE candidate (sender):', event.candidate);
                 if (event.candidate) {
-                    const key = signalingKey + connectionId + '-sender';
-                    const data = JSON.parse(localStorage.getItem(key) || '{}');
-                    data.candidates = data.candidates || [];
-                    data.candidates.push(event.candidate);
-                    localStorage.setItem(key, JSON.stringify(data));
+                    iceCandidatesQueue.push(event.candidate);
+                    saveSignalData('sender', {
+                        answer: peerConnection.localDescription,
+                        candidates: iceCandidatesQueue
+                    });
                 }
             };
 
+            // Monitor connection state
             peerConnection.onconnectionstatechange = () => {
+                console.log('Connection state (sender):', peerConnection.connectionState);
                 if (peerConnection.connectionState === 'connected') {
                     updateStatus('✅ Terhubung! Layar Anda sedang dibagikan.', 'connected', 'sender-status');
+                } else if (peerConnection.connectionState === 'failed') {
+                    updateStatus('❌ Koneksi gagal. Coba lagi.', 'error', 'sender-status');
                 }
+            };
+
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log('ICE connection state (sender):', peerConnection.iceConnectionState);
             };
 
             waitForOffer();
         }
 
         function waitForOffer() {
-            const interval = setInterval(async () => {
-                const key = signalingKey + connectionId + '-receiver';
-                const data = localStorage.getItem(key);
+            let attemptCount = 0;
+            
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+
+            pollingInterval = setInterval(async () => {
+                attemptCount++;
                 
-                if (data) {
-                    const signalData = JSON.parse(data);
-                    
-                    if (signalData.offer) {
+                const signalData = getSignalData('receiver');
+                console.log(`Waiting for offer, attempt ${attemptCount}, found:`, signalData);
+                
+                if (signalData && signalData.offer) {
+                    try {
+                        console.log('Processing offer...');
+                        
                         await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.offer));
+                        console.log('Remote description set');
                         
                         const answer = await peerConnection.createAnswer();
                         await peerConnection.setLocalDescription(answer);
+                        console.log('Answer created');
                         
-                        const senderKey = signalingKey + connectionId + '-sender';
-                        localStorage.setItem(senderKey, JSON.stringify({ answer: answer }));
+                        saveSignalData('sender', {
+                            answer: answer,
+                            candidates: iceCandidatesQueue
+                        });
                         
-                        if (signalData.candidates) {
-                            signalData.candidates.forEach(candidate => {
-                                peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                            });
+                        if (signalData.candidates && signalData.candidates.length > 0) {
+                            console.log('Adding ICE candidates:', signalData.candidates.length);
+                            for (const candidate of signalData.candidates) {
+                                try {
+                                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                                } catch (e) {
+                                    console.warn('Error adding ICE candidate:', e);
+                                }
+                            }
                         }
                         
-                        clearInterval(interval);
+                        clearInterval(pollingInterval);
+                        updateStatus('🔗 Sedang menghubungkan...', 'waiting', 'sender-status');
+                    } catch (error) {
+                        console.error('Error processing offer:', error);
+                        updateStatus('❌ Error: ' + error.message, 'error', 'sender-status');
                     }
+                }
+                
+                // Stop after 60 seconds
+                if (attemptCount > 60) {
+                    clearInterval(pollingInterval);
+                    updateStatus('⏱️ Timeout. Pastikan ID koneksi benar.', 'error', 'sender-status');
                 }
             }, 1000);
         }
 
         function stopReceiving() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
             if (peerConnection) {
                 peerConnection.close();
+                peerConnection = null;
             }
             
             const video = document.getElementById('receivedVideo');
@@ -545,12 +682,18 @@
         }
 
         function stopSharing() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
             }
             
             if (peerConnection) {
                 peerConnection.close();
+                peerConnection = null;
             }
             
             const video = document.getElementById('localVideo');
@@ -571,6 +714,16 @@
                 document.getElementById('connectionId').value = id;
                 document.querySelectorAll('.mode-btn')[1].classList.add('active');
                 document.querySelectorAll('.mode-btn')[0].classList.remove('active');
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
             }
         });
     </script>
