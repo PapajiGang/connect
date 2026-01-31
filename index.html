@@ -132,17 +132,59 @@
 
         .video-container {
             position: relative;
-            background: #000;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
             border-radius: 15px;
             overflow: hidden;
             margin: 20px 0;
             max-width: 100%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border: 2px solid #333;
+        }
+
+        #receiver-video-container {
+            min-height: 500px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #receiver-video-container::before {
+            content: '📺 Kotak ini akan menampilkan layar handphone Anda\A\AMenunggu koneksi...';
+            white-space: pre-wrap;
+            position: absolute;
+            color: #888;
+            font-size: 1.3em;
+            text-align: center;
+            padding: 20px;
+            line-height: 1.8;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        #receiver-video-container.has-video::before {
+            display: none;
+        }
+
+        #sender-video-container {
+            max-width: 400px;
+            margin: 20px auto;
         }
 
         video {
             width: 100%;
             height: auto;
             display: block;
+            background: #000;
+            position: relative;
+            z-index: 10;
+        }
+
+        video::-webkit-media-controls {
+            display: flex !important;
         }
 
         .controls {
@@ -163,6 +205,14 @@
             font-weight: 600;
         }
 
+        .btn small {
+            font-size: 0.75em;
+            font-weight: 400;
+            opacity: 0.8;
+            display: block;
+            margin-top: 4px;
+        }
+
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -171,6 +221,10 @@
         .btn-primary:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
         }
 
         .btn-danger {
@@ -260,42 +314,48 @@
             <!-- Receiver Mode -->
             <div id="receiver-section" class="section active">
                 <div class="instructions">
-                    <h3>Cara Menggunakan:</h3>
+                    <h3>Cara Menggunakan Mode Penerima:</h3>
                     <ol>
                         <li>Klik tombol "Buat Koneksi Baru" di bawah</li>
-                        <li>QR Code akan muncul</li>
+                        <li>QR Code dan ID Koneksi akan muncul</li>
                         <li>Buka halaman ini di handphone Anda</li>
                         <li>Pilih "Mode Pengirim (Handphone)"</li>
                         <li>Scan QR Code atau masukkan ID koneksi</li>
                         <li>Izinkan akses screen sharing di handphone</li>
-                        <li>Layar handphone akan muncul di sini!</li>
+                        <li>Layar handphone akan ditampilkan di kotak hitam di bawah!</li>
                     </ol>
                 </div>
 
                 <div class="controls">
                     <button class="btn btn-primary" onclick="createConnection()">Buat Koneksi Baru</button>
-                    <button class="btn btn-danger" onclick="stopReceiving()" style="display: none;" id="stopReceiverBtn">Stop</button>
+                    <button class="btn btn-danger" onclick="stopReceiving()" style="display: none;" id="stopReceiverBtn">Stop & Reset</button>
                 </div>
 
                 <div id="receiver-status"></div>
                 <div id="qrcode"></div>
                 <div id="connection-id-display"></div>
+                
                 <div class="video-container" id="receiver-video-container" style="display: none;">
-                    <video id="receivedVideo" autoplay playsinline></video>
+                    <video id="receivedVideo" autoplay playsinline controls></video>
                 </div>
             </div>
 
             <!-- Sender Mode -->
             <div id="sender-section" class="section">
                 <div class="instructions">
-                    <h3>Cara Menggunakan:</h3>
+                    <h3>Cara Menggunakan Mode Pengirim:</h3>
                     <ol>
                         <li>Scan QR Code dari PC/Laptop, ATAU</li>
                         <li>Masukkan ID Koneksi secara manual</li>
-                        <li>Klik "Mulai Screen Sharing"</li>
-                        <li>Pilih layar/tab yang ingin dibagikan</li>
-                        <li>Layar Anda akan muncul di PC/Laptop!</li>
+                        <li>Klik "Mulai Berbagi"</li>
+                        <li><strong>Desktop:</strong> Pilih layar/tab yang ingin dibagikan</li>
+                        <li><strong>Mobile:</strong> Jika screen sharing tidak tersedia, kamera akan digunakan</li>
+                        <li>Video Anda akan muncul di PC/Laptop!</li>
                     </ol>
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                        <strong>⚠️ Catatan Mobile:</strong><br>
+                        Kebanyakan browser mobile tidak mendukung screen sharing. Aplikasi akan otomatis menggunakan kamera belakang sebagai alternatif. Untuk screen mirroring sebenarnya, gunakan browser desktop atau Chrome di Android dengan flag experimental enabled.
+                    </div>
                 </div>
 
                 <div class="input-group">
@@ -303,9 +363,20 @@
                     <input type="text" id="connectionId" placeholder="Masukkan ID koneksi dari penerima">
                 </div>
 
+                <div class="input-group">
+                    <label>Pilih Mode Berbagi:</label>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="btn btn-primary" onclick="startSharing('screen')" style="flex: 1;">
+                            🖥️ Screen Share<br><small>(Desktop/Chrome Android)</small>
+                        </button>
+                        <button class="btn btn-primary" onclick="startSharing('camera')" style="flex: 1;">
+                            📹 Kamera<br><small>(Semua Device)</small>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="controls">
-                    <button class="btn btn-primary" onclick="startSharing()">Mulai Screen Sharing</button>
-                    <button class="btn btn-danger" onclick="stopSharing()" style="display: none;" id="stopSenderBtn">Stop Sharing</button>
+                    <button class="btn btn-danger" onclick="stopSharing()" style="display: none;" id="stopSenderBtn">Stop Berbagi</button>
                 </div>
 
                 <div id="sender-status"></div>
@@ -373,6 +444,11 @@
             document.getElementById('connection-id-display').innerHTML = 
                 `<div class="connection-id">ID Koneksi: ${connectionId}</div>`;
             
+            // Show video container immediately with waiting message
+            const container = document.getElementById('receiver-video-container');
+            container.style.display = 'flex';
+            container.classList.remove('has-video');
+            
             updateStatus('⏳ Menunggu koneksi dari handphone...', 'waiting', 'receiver-status');
             document.getElementById('stopReceiverBtn').style.display = 'inline-block';
 
@@ -400,9 +476,11 @@
             peerConnection.ontrack = (event) => {
                 console.log('Track received!', event);
                 const video = document.getElementById('receivedVideo');
+                const container = document.getElementById('receiver-video-container');
                 if (event.streams && event.streams[0]) {
                     video.srcObject = event.streams[0];
-                    document.getElementById('receiver-video-container').style.display = 'block';
+                    container.style.display = 'flex';
+                    container.classList.add('has-video');
                     updateStatus('✅ Terhubung! Menampilkan layar handphone...', 'connected', 'receiver-status');
                 }
             };
@@ -515,7 +593,7 @@
             }, 1000);
         }
 
-        async function startSharing() {
+        async function startSharing(mode = 'auto') {
             const connId = document.getElementById('connectionId').value.trim();
             
             if (!connId) {
@@ -526,29 +604,63 @@
             connectionId = connId;
 
             try {
-                // Request screen sharing
-                localStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { 
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        frameRate: { ideal: 30 }
-                    },
-                    audio: true
-                });
-
-                console.log('Screen capture started');
+                if (mode === 'screen' || (mode === 'auto' && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) {
+                    // Try screen capture
+                    try {
+                        localStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: { 
+                                width: { ideal: 1920 },
+                                height: { ideal: 1080 },
+                                frameRate: { ideal: 30 }
+                            },
+                            audio: true
+                        });
+                        console.log('Screen capture started');
+                        updateStatus('📺 Screen sharing dimulai...', 'waiting', 'sender-status');
+                    } catch (screenError) {
+                        if (mode === 'screen') {
+                            throw screenError;
+                        }
+                        // Fallback to camera if auto mode
+                        console.log('Screen sharing failed, falling back to camera');
+                        mode = 'camera';
+                    }
+                }
+                
+                if (mode === 'camera' || !localStream) {
+                    // Use camera
+                    updateStatus('📹 Menggunakan kamera...', 'waiting', 'sender-status');
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            facingMode: 'environment', // Use back camera
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 }
+                        },
+                        audio: true
+                    });
+                    console.log('Camera capture started');
+                    updateStatus('📹 Kamera aktif...', 'waiting', 'sender-status');
+                }
 
                 const video = document.getElementById('localVideo');
                 video.srcObject = localStream;
                 document.getElementById('sender-video-container').style.display = 'block';
                 document.getElementById('stopSenderBtn').style.display = 'inline-block';
 
-                updateStatus('⏳ Menghubungkan...', 'waiting', 'sender-status');
+                updateStatus('⏳ Menghubungkan ke penerima...', 'waiting', 'sender-status');
 
                 setupSenderConnection();
             } catch (error) {
-                console.error('Screen capture error:', error);
-                updateStatus('❌ Gagal mengakses layar: ' + error.message, 'error', 'sender-status');
+                console.error('Media capture error:', error);
+                let errorMsg = error.message;
+                if (error.name === 'NotAllowedError') {
+                    errorMsg = 'Izin ditolak. Berikan akses ke layar/kamera.';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg = 'Kamera tidak ditemukan.';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMsg = 'Fitur tidak didukung di browser ini.';
+                }
+                updateStatus('❌ ' + errorMsg, 'error', 'sender-status');
             }
         }
 
@@ -667,9 +779,11 @@
             }
             
             const video = document.getElementById('receivedVideo');
+            const container = document.getElementById('receiver-video-container');
             video.srcObject = null;
             
-            document.getElementById('receiver-video-container').style.display = 'none';
+            container.style.display = 'none';
+            container.classList.remove('has-video');
             document.getElementById('qrcode').innerHTML = '';
             document.getElementById('connection-id-display').innerHTML = '';
             document.getElementById('receiver-status').style.display = 'none';
