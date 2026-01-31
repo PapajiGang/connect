@@ -366,10 +366,10 @@
                 <div class="input-group">
                     <label>Pilih Mode Berbagi:</label>
                     <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <button class="btn btn-primary" onclick="startSharing('screen')" style="flex: 1;">
+                        <button id="screenShareBtn" class="btn btn-primary" onclick="startSharing('screen')" style="flex: 1;">
                             🖥️ Screen Share<br><small>(Desktop/Chrome Android)</small>
                         </button>
-                        <button class="btn btn-primary" onclick="startSharing('camera')" style="flex: 1;">
+                        <button id="cameraBtn" class="btn btn-primary" onclick="startSharing('camera')" style="flex: 1;">
                             📹 Kamera<br><small>(Semua Device)</small>
                         </button>
                     </div>
@@ -604,32 +604,31 @@
             connectionId = connId;
 
             try {
-                if (mode === 'screen' || (mode === 'auto' && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) {
-                    // Try screen capture
-                    try {
-                        localStream = await navigator.mediaDevices.getDisplayMedia({
-                            video: { 
-                                width: { ideal: 1920 },
-                                height: { ideal: 1080 },
-                                frameRate: { ideal: 30 }
-                            },
-                            audio: true
-                        });
-                        console.log('Screen capture started');
-                        updateStatus('📺 Screen sharing dimulai...', 'waiting', 'sender-status');
-                    } catch (screenError) {
-                        if (mode === 'screen') {
-                            throw screenError;
-                        }
-                        // Fallback to camera if auto mode
-                        console.log('Screen sharing failed, falling back to camera');
-                        mode = 'camera';
-                    }
-                }
+                // Check if getDisplayMedia exists and is a function
+                const hasDisplayMedia = navigator.mediaDevices && 
+                                       typeof navigator.mediaDevices.getDisplayMedia === 'function';
                 
-                if (mode === 'camera' || !localStream) {
+                if (mode === 'screen') {
+                    if (!hasDisplayMedia) {
+                        updateStatus('❌ Screen sharing tidak didukung di browser ini. Gunakan tombol Kamera.', 'error', 'sender-status');
+                        return;
+                    }
+                    
+                    // Try screen capture
+                    localStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: { 
+                            width: { ideal: 1920 },
+                            height: { ideal: 1080 },
+                            frameRate: { ideal: 30 }
+                        },
+                        audio: true
+                    });
+                    console.log('Screen capture started');
+                    updateStatus('📺 Screen sharing dimulai...', 'waiting', 'sender-status');
+                    
+                } else if (mode === 'camera') {
                     // Use camera
-                    updateStatus('📹 Menggunakan kamera...', 'waiting', 'sender-status');
+                    updateStatus('📹 Mengaktifkan kamera...', 'waiting', 'sender-status');
                     localStream = await navigator.mediaDevices.getUserMedia({
                         video: { 
                             facingMode: 'environment', // Use back camera
@@ -640,6 +639,11 @@
                     });
                     console.log('Camera capture started');
                     updateStatus('📹 Kamera aktif...', 'waiting', 'sender-status');
+                    
+                } else {
+                    // Auto mode - shouldn't reach here with new buttons
+                    updateStatus('❌ Pilih mode Screen Share atau Kamera', 'error', 'sender-status');
+                    return;
                 }
 
                 const video = document.getElementById('localVideo');
@@ -650,16 +654,21 @@
                 updateStatus('⏳ Menghubungkan ke penerima...', 'waiting', 'sender-status');
 
                 setupSenderConnection();
+                
             } catch (error) {
                 console.error('Media capture error:', error);
                 let errorMsg = error.message;
+                
                 if (error.name === 'NotAllowedError') {
                     errorMsg = 'Izin ditolak. Berikan akses ke layar/kamera.';
                 } else if (error.name === 'NotFoundError') {
                     errorMsg = 'Kamera tidak ditemukan.';
                 } else if (error.name === 'NotSupportedError') {
                     errorMsg = 'Fitur tidak didukung di browser ini.';
+                } else if (error.name === 'TypeError') {
+                    errorMsg = 'Browser tidak mendukung fitur ini. Gunakan Chrome/Firefox desktop.';
                 }
+                
                 updateStatus('❌ ' + errorMsg, 'error', 'sender-status');
             }
         }
@@ -829,7 +838,28 @@
                 document.querySelectorAll('.mode-btn')[1].classList.add('active');
                 document.querySelectorAll('.mode-btn')[0].classList.remove('active');
             }
+            
+            // Check if screen share is supported and update UI
+            checkScreenShareSupport();
         });
+        
+        function checkScreenShareSupport() {
+            const hasDisplayMedia = navigator.mediaDevices && 
+                                   typeof navigator.mediaDevices.getDisplayMedia === 'function';
+            
+            const screenBtn = document.getElementById('screenShareBtn');
+            const cameraBtn = document.getElementById('cameraBtn');
+            
+            if (!hasDisplayMedia && screenBtn) {
+                screenBtn.disabled = true;
+                screenBtn.style.opacity = '0.5';
+                screenBtn.style.cursor = 'not-allowed';
+                screenBtn.innerHTML = '🖥️ Screen Share<br><small>❌ Tidak Didukung</small>';
+                
+                // Add tooltip
+                screenBtn.title = 'Browser ini tidak mendukung screen sharing. Gunakan Chrome/Firefox desktop atau gunakan mode Kamera.';
+            }
+        }
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
