@@ -477,39 +477,71 @@
             });
 
             peer.on('call', (incomingCall) => {
-                console.log('📞 Incoming call...');
+                console.log('📞 Incoming call from:', incomingCall.peer);
                 updateStatus('📞 Menerima panggilan...', 'waiting', 'receiver-status');
                 
                 // Answer the call without sending any stream
-                incomingCall.answer();
+                console.log('Answering call...');
+                incomingCall.answer(); // Don't send stream back
                 call = incomingCall;
 
                 incomingCall.on('stream', (remoteStream) => {
-                    console.log('✅ Stream received!');
+                    console.log('✅ Stream received from sender!');
+                    console.log('Stream ID:', remoteStream.id);
+                    console.log('Stream tracks:', remoteStream.getTracks().map(t => `${t.kind}: ${t.label} (${t.readyState})`));
+                    
                     const video = document.getElementById('receivedVideo');
                     const container = document.getElementById('receiver-video-container');
                     
+                    // Set stream to video element
                     video.srcObject = remoteStream;
                     
-                    video.play().then(() => {
-                        console.log('Video playing');
-                        container.classList.add('has-video');
-                        updateStatus('✅ Terhubung! Menampilkan video dari pengirim.', 'connected', 'receiver-status');
-                    }).catch(err => {
-                        console.error('Error playing video:', err);
-                        updateStatus('⚠️ Video diterima tapi tidak bisa diputar.', 'error', 'receiver-status');
-                    });
+                    // Force play
+                    video.onloadedmetadata = () => {
+                        console.log('Video metadata loaded');
+                        console.log('Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+                        
+                        video.play().then(() => {
+                            console.log('✅ Video playing successfully!');
+                            container.classList.add('has-video');
+                            updateStatus('✅ Terhubung! Menampilkan video dari pengirim.', 'connected', 'receiver-status');
+                        }).catch(err => {
+                            console.error('❌ Error playing video:', err);
+                            updateStatus('⚠️ Video diterima tapi tidak bisa diputar: ' + err.message, 'error', 'receiver-status');
+                        });
+                    };
                 });
 
                 incomingCall.on('close', () => {
-                    console.log('Call closed');
+                    console.log('📴 Call closed');
                     updateStatus('⚠️ Koneksi terputus.', 'error', 'receiver-status');
+                    const video = document.getElementById('receivedVideo');
+                    video.srcObject = null;
                 });
 
                 incomingCall.on('error', (err) => {
-                    console.error('Call error:', err);
+                    console.error('❌ Call error:', err);
                     updateStatus('❌ Error: ' + err.message, 'error', 'receiver-status');
                 });
+
+                // Monitor connection state
+                const monitorInterval = setInterval(() => {
+                    if (incomingCall.peerConnection) {
+                        const state = incomingCall.peerConnection.connectionState;
+                        const iceState = incomingCall.peerConnection.iceConnectionState;
+                        console.log('Receiver connection state:', state, '| ICE:', iceState);
+                        
+                        if (state === 'failed' || iceState === 'failed') {
+                            console.error('Connection failed');
+                            clearInterval(monitorInterval);
+                        } else if (state === 'connected') {
+                            console.log('Connection established on receiver side');
+                            clearInterval(monitorInterval);
+                        }
+                    }
+                }, 2000);
+
+                setTimeout(() => clearInterval(monitorInterval), 60000);
             });
 
             peer.on('error', (err) => {
@@ -531,6 +563,9 @@
                 const hasDisplayMedia = navigator.mediaDevices && 
                                        typeof navigator.mediaDevices.getDisplayMedia === 'function';
                 
+                console.log('=== Starting sharing mode:', mode, '===');
+                console.log('Remote Peer ID:', remotePeerId);
+                
                 if (mode === 'screen') {
                     if (!hasDisplayMedia) {
                         updateStatus('❌ Screen sharing tidak didukung. Gunakan tombol Kamera.', 'error', 'sender-status');
@@ -538,27 +573,54 @@
                     }
                     
                     updateStatus('📺 Meminta izin screen sharing...', 'waiting', 'sender-status');
-                    localStream = await navigator.mediaDevices.getDisplayMedia({
-                        video: { 
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 },
-                            frameRate: { ideal: 30 }
-                        },
-                        audio: true
-                    });
-                    console.log('Screen capture started');
+                    console.log('Requesting screen share...');
+                    
+                    try {
+                        localStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: {
+                                cursor: "always"
+                            },
+                            audio: false // Try without audio first for desktop
+                        });
+                        console.log('✅ Screen capture started');
+                        console.log('Stream tracks:', localStream.getTracks().map(t => `${t.kind}: ${t.label}`));
+                    } catch (screenError) {
+                        console.error('Screen share error:', screenError);
+                        if (screenError.name === 'NotAllowedError') {
+                            updateStatus('❌ Screen sharing dibatalkan atau ditolak.', 'error', 'sender-status');
+                        } else {
+                            updateStatus('❌ Error screen share: ' + screenError.message, 'error', 'sender-status');
+                        }
+                        return;
+                    }
                     
                 } else if (mode === 'camera') {
                     updateStatus('📹 Mengaktifkan kamera...', 'waiting', 'sender-status');
-                    localStream = await navigator.mediaDevices.getUserMedia({
-                        video: { 
-                            facingMode: 'environment',
-                            width: { ideal: 1920 },
-                            height: { ideal: 1080 }
-                        },
-                        audio: true
-                    });
-                    console.log('Camera started');
+                    console.log('Requesting camera...');
+                    
+                    try {
+                        localStream = await navigator.mediaDevices.getUserMedia({
+                            video: { 
+                                facingMode: 'environment',
+                                width: { ideal: 1920 },
+                                height: { ideal: 1080 }
+                            },
+                            audio: true
+                        });
+                        console.log('✅ Camera started');
+                        console.log('Stream tracks:', localStream.getTracks().map(t => `${t.kind}: ${t.label}`));
+                    } catch (cameraError) {
+                        console.error('Camera error:', cameraError);
+                        updateStatus('❌ Error kamera: ' + cameraError.message, 'error', 'sender-status');
+                        return;
+                    }
+                }
+
+                // Verify stream is valid
+                if (!localStream || localStream.getTracks().length === 0) {
+                    console.error('❌ No tracks in stream!');
+                    updateStatus('❌ Stream tidak valid. Coba lagi.', 'error', 'sender-status');
+                    return;
                 }
 
                 // Show local video preview
@@ -567,72 +629,117 @@
                 document.getElementById('sender-video-container').style.display = 'block';
                 document.getElementById('stopSenderBtn').style.display = 'inline-block';
 
+                // Wait for video to load
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        console.log('Local video metadata loaded');
+                        video.play().then(() => {
+                            console.log('Local video playing');
+                            resolve();
+                        });
+                    };
+                });
+
                 updateStatus('🔗 Menghubungkan ke penerima...', 'waiting', 'sender-status');
 
                 // Create peer if not exists
                 if (!peer) {
+                    console.log('Creating new peer...');
                     peer = new Peer({
                         config: {
                             iceServers: [
                                 { urls: 'stun:stun.l.google.com:19302' },
-                                { urls: 'stun:stun1.l.google.com:19302' }
+                                { urls: 'stun:stun1.l.google.com:19302' },
+                                { urls: 'stun:stun2.l.google.com:19302' }
                             ]
-                        }
+                        },
+                        debug: 2 // Enable debug logging
                     });
 
-                    await new Promise((resolve) => {
-                        peer.on('open', () => {
-                            console.log('Peer opened with ID:', peer.id);
+                    await new Promise((resolve, reject) => {
+                        peer.on('open', (id) => {
+                            console.log('✅ Peer opened with ID:', id);
                             resolve();
                         });
+                        
+                        peer.on('error', (err) => {
+                            console.error('❌ Peer creation error:', err);
+                            reject(err);
+                        });
+                        
+                        setTimeout(() => reject(new Error('Peer connection timeout')), 10000);
                     });
                 }
 
                 // Call the receiver
-                console.log('Calling peer:', remotePeerId);
+                console.log('📞 Calling peer:', remotePeerId);
+                console.log('Sending stream with tracks:', localStream.getTracks().length);
+                
                 call = peer.call(remotePeerId, localStream);
 
+                if (!call) {
+                    console.error('❌ Call failed to initiate');
+                    updateStatus('❌ Gagal memanggil penerima. Periksa Peer ID.', 'error', 'sender-status');
+                    return;
+                }
+
+                console.log('✅ Call initiated');
+
                 call.on('stream', (remoteStream) => {
-                    // Receiver doesn't send stream, so this won't be called
-                    console.log('Remote stream received (unexpected)');
+                    console.log('Remote stream received (receiver might send back)');
                 });
 
                 call.on('close', () => {
-                    console.log('Call closed');
+                    console.log('📴 Call closed');
                     updateStatus('⚠️ Koneksi terputus.', 'error', 'sender-status');
                 });
 
                 call.on('error', (err) => {
-                    console.error('Call error:', err);
-                    updateStatus('❌ Error: ' + err.message, 'error', 'sender-status');
+                    console.error('❌ Call error:', err);
+                    updateStatus('❌ Call error: ' + err.message, 'error', 'sender-status');
                 });
 
-                // Monitor connection
+                // Monitor connection state
+                let connectionEstablished = false;
                 const checkConnection = setInterval(() => {
                     if (call && call.peerConnection) {
                         const state = call.peerConnection.connectionState;
-                        console.log('Connection state:', state);
+                        const iceState = call.peerConnection.iceConnectionState;
                         
-                        if (state === 'connected') {
+                        console.log('Connection state:', state, '| ICE state:', iceState);
+                        
+                        if (state === 'connected' && !connectionEstablished) {
+                            connectionEstablished = true;
                             updateStatus('✅ Terhubung! Video sedang dikirim.', 'connected', 'sender-status');
+                            console.log('🎉 Connection established successfully!');
                             clearInterval(checkConnection);
-                        } else if (state === 'failed') {
-                            updateStatus('❌ Koneksi gagal. Pastikan Peer ID benar.', 'error', 'sender-status');
+                        } else if (state === 'failed' || iceState === 'failed') {
+                            updateStatus('❌ Koneksi gagal. Pastikan Peer ID benar dan penerima siap.', 'error', 'sender-status');
                             clearInterval(checkConnection);
+                        } else if (state === 'disconnected') {
+                            updateStatus('⚠️ Terputus. Mencoba reconnect...', 'error', 'sender-status');
                         }
                     }
                 }, 1000);
 
-                setTimeout(() => clearInterval(checkConnection), 30000);
+                setTimeout(() => {
+                    clearInterval(checkConnection);
+                    if (!connectionEstablished) {
+                        console.warn('⏱️ Connection timeout after 30s');
+                        updateStatus('⏱️ Timeout. Koneksi tidak terbentuk dalam 30 detik.', 'error', 'sender-status');
+                    }
+                }, 30000);
 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('❌ Unexpected error:', error);
                 let errorMsg = error.message;
                 
                 if (error.name === 'NotAllowedError') {
                     errorMsg = 'Izin ditolak. Berikan akses ke layar/kamera.';
                 } else if (error.name === 'NotFoundError') {
-                    errorMsg = 'Kamera tidak ditemukan.';
+                    errorMsg = 'Device tidak ditemukan.';
+                } else if (error.name === 'NotReadableError') {
+                    errorMsg = 'Device sedang digunakan aplikasi lain.';
                 }
                 
                 updateStatus('❌ ' + errorMsg, 'error', 'sender-status');
