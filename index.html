@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phone Screen Mirroring</title>
+    <title>Phone Screen Mirroring - PeerJS</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         * {
@@ -95,7 +96,7 @@
             border-radius: 15px;
         }
 
-        .connection-id {
+        .peer-id {
             background: #f0f0f0;
             padding: 15px;
             border-radius: 10px;
@@ -105,6 +106,7 @@
             font-size: 1.2em;
             color: #667eea;
             font-weight: bold;
+            word-break: break-all;
         }
 
         .status {
@@ -149,7 +151,7 @@
         }
 
         #receiver-video-container::before {
-            content: '📺 Kotak ini akan menampilkan layar handphone Anda\A\AMenunggu koneksi...';
+            content: '📺 Kotak ini akan menampilkan layar/kamera dari pengirim\A\AMenunggu koneksi...';
             white-space: pre-wrap;
             position: absolute;
             color: #888;
@@ -218,13 +220,18 @@
             color: white;
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
 
         .btn-primary:active {
             transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .btn-danger {
@@ -283,6 +290,18 @@
             line-height: 1.6;
         }
 
+        .info-box {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        .info-box strong {
+            color: #0c5460;
+        }
+
         @media (max-width: 768px) {
             .header h1 {
                 font-size: 1.5em;
@@ -302,13 +321,13 @@
     <div class="container">
         <div class="header">
             <h1>📱 Phone Screen Mirroring</h1>
-            <p>Mirror layar handphone Anda ke browser</p>
+            <p>Mirror layar/kamera handphone Anda ke browser - Powered by PeerJS</p>
         </div>
 
         <div class="content">
             <div class="mode-selector">
-                <button class="mode-btn active" onclick="switchMode('receiver')">🖥️ Mode Penerima (PC/Laptop)</button>
-                <button class="mode-btn" onclick="switchMode('sender')">📱 Mode Pengirim (Handphone)</button>
+                <button class="mode-btn active" onclick="switchMode('receiver')">🖥️ Mode Penerima</button>
+                <button class="mode-btn" onclick="switchMode('sender')">📱 Mode Pengirim</button>
             </div>
 
             <!-- Receiver Mode -->
@@ -317,23 +336,27 @@
                     <h3>Cara Menggunakan Mode Penerima:</h3>
                     <ol>
                         <li>Klik tombol "Buat Koneksi Baru" di bawah</li>
-                        <li>QR Code dan ID Koneksi akan muncul</li>
+                        <li>Peer ID dan QR Code akan muncul</li>
                         <li>Buka halaman ini di handphone Anda</li>
-                        <li>Pilih "Mode Pengirim (Handphone)"</li>
-                        <li>Scan QR Code atau masukkan ID koneksi</li>
-                        <li>Izinkan akses screen sharing di handphone</li>
-                        <li>Layar handphone akan ditampilkan di kotak hitam di bawah!</li>
+                        <li>Pilih "Mode Pengirim"</li>
+                        <li>Scan QR Code atau masukkan Peer ID</li>
+                        <li>Pilih Screen Share atau Kamera</li>
+                        <li>Video akan ditampilkan di kotak hitam di bawah!</li>
                     </ol>
                 </div>
 
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> Menggunakan PeerJS cloud server untuk signaling. Koneksi tetap peer-to-peer (aman).
+                </div>
+
                 <div class="controls">
-                    <button class="btn btn-primary" onclick="createConnection()">Buat Koneksi Baru</button>
+                    <button class="btn btn-primary" onclick="createReceiverConnection()">Buat Koneksi Baru</button>
                     <button class="btn btn-danger" onclick="stopReceiving()" style="display: none;" id="stopReceiverBtn">Stop & Reset</button>
                 </div>
 
                 <div id="receiver-status"></div>
                 <div id="qrcode"></div>
-                <div id="connection-id-display"></div>
+                <div id="peer-id-display"></div>
                 
                 <div class="video-container" id="receiver-video-container" style="display: none;">
                     <video id="receivedVideo" autoplay playsinline controls></video>
@@ -345,29 +368,28 @@
                 <div class="instructions">
                     <h3>Cara Menggunakan Mode Pengirim:</h3>
                     <ol>
-                        <li>Scan QR Code dari PC/Laptop, ATAU</li>
-                        <li>Masukkan ID Koneksi secara manual</li>
-                        <li>Klik "Mulai Berbagi"</li>
-                        <li><strong>Desktop:</strong> Pilih layar/tab yang ingin dibagikan</li>
-                        <li><strong>Mobile:</strong> Jika screen sharing tidak tersedia, kamera akan digunakan</li>
-                        <li>Video Anda akan muncul di PC/Laptop!</li>
+                        <li>Scan QR Code dari penerima, ATAU</li>
+                        <li>Masukkan Peer ID secara manual</li>
+                        <li>Pilih mode berbagi (Screen Share atau Kamera)</li>
+                        <li>Izinkan akses saat diminta</li>
+                        <li>Video akan dikirim ke penerima!</li>
                     </ol>
-                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                        <strong>⚠️ Catatan Mobile:</strong><br>
-                        Kebanyakan browser mobile tidak mendukung screen sharing. Aplikasi akan otomatis menggunakan kamera belakang sebagai alternatif. Untuk screen mirroring sebenarnya, gunakan browser desktop atau Chrome di Android dengan flag experimental enabled.
-                    </div>
+                </div>
+
+                <div class="info-box">
+                    <strong>📱 Untuk Handphone:</strong> Gunakan mode Kamera karena kebanyakan browser mobile tidak support screen sharing.
                 </div>
 
                 <div class="input-group">
-                    <label for="connectionId">ID Koneksi:</label>
-                    <input type="text" id="connectionId" placeholder="Masukkan ID koneksi dari penerima">
+                    <label for="remotePeerId">Peer ID Penerima:</label>
+                    <input type="text" id="remotePeerId" placeholder="Masukkan Peer ID dari penerima">
                 </div>
 
                 <div class="input-group">
                     <label>Pilih Mode Berbagi:</label>
                     <div style="display: flex; gap: 10px; margin-top: 10px;">
                         <button id="screenShareBtn" class="btn btn-primary" onclick="startSharing('screen')" style="flex: 1;">
-                            🖥️ Screen Share<br><small>(Desktop/Chrome Android)</small>
+                            🖥️ Screen Share<br><small>(Desktop)</small>
                         </button>
                         <button id="cameraBtn" class="btn btn-primary" onclick="startSharing('camera')" style="flex: 1;">
                             📹 Kamera<br><small>(Semua Device)</small>
@@ -388,16 +410,11 @@
     </div>
 
     <script>
-        let peerConnection;
-        let dataChannel;
+        let peer;
+        let conn;
+        let call;
         let localStream;
-        let connectionId;
         let isReceiver = true;
-        let pollingInterval;
-        let iceCandidatesQueue = [];
-
-        // Simple signaling using localStorage with improved synchronization
-        const signalingKey = 'screen-mirror-signal-';
 
         function switchMode(mode) {
             isReceiver = mode === 'receiver';
@@ -409,10 +426,6 @@
             document.getElementById(mode + '-section').classList.add('active');
         }
 
-        function generateId() {
-            return Math.random().toString(36).substring(2, 8).toUpperCase();
-        }
-
         function updateStatus(message, type, elementId) {
             const statusDiv = document.getElementById(elementId);
             statusDiv.className = `status ${type}`;
@@ -421,200 +434,110 @@
             console.log(`[${elementId}] ${message}`);
         }
 
-        async function createConnection() {
-            // Clear any existing connection
-            if (peerConnection) {
-                peerConnection.close();
-            }
-            
-            connectionId = generateId();
-            
-            const qrcodeDiv = document.getElementById('qrcode');
-            qrcodeDiv.innerHTML = '';
-            
-            const url = window.location.href.split('?')[0] + '?id=' + connectionId;
-            new QRCode(qrcodeDiv, {
-                text: url,
-                width: 256,
-                height: 256,
-                colorDark: '#667eea',
-                colorLight: '#ffffff',
-            });
-
-            document.getElementById('connection-id-display').innerHTML = 
-                `<div class="connection-id">ID Koneksi: ${connectionId}</div>`;
-            
-            // Show video container immediately with waiting message
+        function createReceiverConnection() {
+            // Show video container immediately
             const container = document.getElementById('receiver-video-container');
             container.style.display = 'flex';
             container.classList.remove('has-video');
-            
-            updateStatus('⏳ Menunggu koneksi dari handphone...', 'waiting', 'receiver-status');
-            document.getElementById('stopReceiverBtn').style.display = 'inline-block';
 
-            // Clear old data
-            localStorage.removeItem(signalingKey + connectionId + '-receiver');
-            localStorage.removeItem(signalingKey + connectionId + '-sender');
+            updateStatus('⏳ Membuat koneksi... Tunggu sebentar.', 'waiting', 'receiver-status');
 
-            setupReceiverConnection();
-        }
-
-        async function setupReceiverConnection() {
-            const configuration = {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' }
-                ]
-            };
-
-            peerConnection = new RTCPeerConnection(configuration);
-            iceCandidatesQueue = [];
-
-            // Handle incoming tracks
-            peerConnection.ontrack = (event) => {
-                console.log('Track received!', event);
-                const video = document.getElementById('receivedVideo');
-                const container = document.getElementById('receiver-video-container');
-                if (event.streams && event.streams[0]) {
-                    video.srcObject = event.streams[0];
-                    container.style.display = 'flex';
-                    container.classList.add('has-video');
-                    updateStatus('✅ Terhubung! Menampilkan layar handphone...', 'connected', 'receiver-status');
+            // Create peer with random ID
+            peer = new Peer({
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 }
-            };
+            });
 
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-                console.log('ICE candidate (receiver):', event.candidate);
-                if (event.candidate) {
-                    iceCandidatesQueue.push(event.candidate);
-                    saveSignalData('receiver', {
-                        offer: peerConnection.localDescription,
-                        candidates: iceCandidatesQueue
+            peer.on('open', (id) => {
+                console.log('✅ Peer ID:', id);
+                
+                // Display peer ID
+                document.getElementById('peer-id-display').innerHTML = 
+                    `<div class="peer-id">Peer ID: ${id}</div>`;
+                
+                // Generate QR code
+                const qrcodeDiv = document.getElementById('qrcode');
+                qrcodeDiv.innerHTML = '';
+                
+                const url = window.location.href.split('?')[0] + '?peer=' + id;
+                new QRCode(qrcodeDiv, {
+                    text: url,
+                    width: 256,
+                    height: 256,
+                    colorDark: '#667eea',
+                    colorLight: '#ffffff',
+                });
+
+                updateStatus('✅ Siap! Menunggu koneksi dari pengirim...', 'waiting', 'receiver-status');
+                document.getElementById('stopReceiverBtn').style.display = 'inline-block';
+            });
+
+            peer.on('call', (incomingCall) => {
+                console.log('📞 Incoming call...');
+                updateStatus('📞 Menerima panggilan...', 'waiting', 'receiver-status');
+                
+                // Answer the call without sending any stream
+                incomingCall.answer();
+                call = incomingCall;
+
+                incomingCall.on('stream', (remoteStream) => {
+                    console.log('✅ Stream received!');
+                    const video = document.getElementById('receivedVideo');
+                    const container = document.getElementById('receiver-video-container');
+                    
+                    video.srcObject = remoteStream;
+                    
+                    video.play().then(() => {
+                        console.log('Video playing');
+                        container.classList.add('has-video');
+                        updateStatus('✅ Terhubung! Menampilkan video dari pengirim.', 'connected', 'receiver-status');
+                    }).catch(err => {
+                        console.error('Error playing video:', err);
+                        updateStatus('⚠️ Video diterima tapi tidak bisa diputar.', 'error', 'receiver-status');
                     });
-                }
-            };
-
-            // Monitor connection state
-            peerConnection.onconnectionstatechange = () => {
-                console.log('Connection state (receiver):', peerConnection.connectionState);
-                if (peerConnection.connectionState === 'connected') {
-                    updateStatus('✅ Koneksi WebRTC berhasil!', 'connected', 'receiver-status');
-                } else if (peerConnection.connectionState === 'failed') {
-                    updateStatus('❌ Koneksi gagal. Coba lagi.', 'error', 'receiver-status');
-                }
-            };
-
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log('ICE connection state (receiver):', peerConnection.iceConnectionState);
-            };
-
-            // Create and set offer
-            try {
-                const offer = await peerConnection.createOffer({
-                    offerToReceiveVideo: true,
-                    offerToReceiveAudio: true
-                });
-                await peerConnection.setLocalDescription(offer);
-                
-                saveSignalData('receiver', {
-                    offer: offer,
-                    candidates: iceCandidatesQueue
                 });
 
-                console.log('Offer created and saved');
-                pollForAnswer();
-            } catch (error) {
-                console.error('Error creating offer:', error);
-                updateStatus('❌ Error: ' + error.message, 'error', 'receiver-status');
-            }
+                incomingCall.on('close', () => {
+                    console.log('Call closed');
+                    updateStatus('⚠️ Koneksi terputus.', 'error', 'receiver-status');
+                });
+
+                incomingCall.on('error', (err) => {
+                    console.error('Call error:', err);
+                    updateStatus('❌ Error: ' + err.message, 'error', 'receiver-status');
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                updateStatus('❌ Error: ' + err.message, 'error', 'receiver-status');
+            });
         }
 
-        function saveSignalData(role, data) {
-            const key = signalingKey + connectionId + '-' + role;
-            localStorage.setItem(key, JSON.stringify(data));
-            console.log(`Saved signal data for ${role}:`, data);
-        }
-
-        function getSignalData(role) {
-            const key = signalingKey + connectionId + '-' + role;
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : null;
-        }
-
-        function pollForAnswer() {
-            let attemptCount = 0;
+        async function startSharing(mode) {
+            const remotePeerId = document.getElementById('remotePeerId').value.trim();
             
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
-
-            pollingInterval = setInterval(async () => {
-                attemptCount++;
-                
-                const signalData = getSignalData('sender');
-                console.log(`Polling attempt ${attemptCount}, found:`, signalData);
-                
-                if (signalData && signalData.answer) {
-                    try {
-                        console.log('Processing answer...');
-                        
-                        if (peerConnection.signalingState !== 'stable') {
-                            await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.answer));
-                            console.log('Remote description set');
-                        }
-                        
-                        if (signalData.candidates && signalData.candidates.length > 0) {
-                            console.log('Adding ICE candidates:', signalData.candidates.length);
-                            for (const candidate of signalData.candidates) {
-                                try {
-                                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                                } catch (e) {
-                                    console.warn('Error adding ICE candidate:', e);
-                                }
-                            }
-                        }
-                        
-                        clearInterval(pollingInterval);
-                        updateStatus('🔗 Sedang menghubungkan...', 'waiting', 'receiver-status');
-                    } catch (error) {
-                        console.error('Error processing answer:', error);
-                        updateStatus('❌ Error: ' + error.message, 'error', 'receiver-status');
-                    }
-                }
-                
-                // Stop after 60 seconds
-                if (attemptCount > 60) {
-                    clearInterval(pollingInterval);
-                    updateStatus('⏱️ Timeout. Refresh dan coba lagi.', 'error', 'receiver-status');
-                }
-            }, 1000);
-        }
-
-        async function startSharing(mode = 'auto') {
-            const connId = document.getElementById('connectionId').value.trim();
-            
-            if (!connId) {
-                updateStatus('❌ Masukkan ID koneksi terlebih dahulu!', 'error', 'sender-status');
+            if (!remotePeerId) {
+                updateStatus('❌ Masukkan Peer ID terlebih dahulu!', 'error', 'sender-status');
                 return;
             }
 
-            connectionId = connId;
-
             try {
-                // Check if getDisplayMedia exists and is a function
+                // Check browser support
                 const hasDisplayMedia = navigator.mediaDevices && 
                                        typeof navigator.mediaDevices.getDisplayMedia === 'function';
                 
                 if (mode === 'screen') {
                     if (!hasDisplayMedia) {
-                        updateStatus('❌ Screen sharing tidak didukung di browser ini. Gunakan tombol Kamera.', 'error', 'sender-status');
+                        updateStatus('❌ Screen sharing tidak didukung. Gunakan tombol Kamera.', 'error', 'sender-status');
                         return;
                     }
                     
-                    // Try screen capture
+                    updateStatus('📺 Meminta izin screen sharing...', 'waiting', 'sender-status');
                     localStream = await navigator.mediaDevices.getDisplayMedia({
                         video: { 
                             width: { ideal: 1920 },
@@ -624,167 +547,106 @@
                         audio: true
                     });
                     console.log('Screen capture started');
-                    updateStatus('📺 Screen sharing dimulai...', 'waiting', 'sender-status');
                     
                 } else if (mode === 'camera') {
-                    // Use camera
                     updateStatus('📹 Mengaktifkan kamera...', 'waiting', 'sender-status');
                     localStream = await navigator.mediaDevices.getUserMedia({
                         video: { 
-                            facingMode: 'environment', // Use back camera
+                            facingMode: 'environment',
                             width: { ideal: 1920 },
                             height: { ideal: 1080 }
                         },
                         audio: true
                     });
-                    console.log('Camera capture started');
-                    updateStatus('📹 Kamera aktif...', 'waiting', 'sender-status');
-                    
-                } else {
-                    // Auto mode - shouldn't reach here with new buttons
-                    updateStatus('❌ Pilih mode Screen Share atau Kamera', 'error', 'sender-status');
-                    return;
+                    console.log('Camera started');
                 }
 
+                // Show local video preview
                 const video = document.getElementById('localVideo');
                 video.srcObject = localStream;
                 document.getElementById('sender-video-container').style.display = 'block';
                 document.getElementById('stopSenderBtn').style.display = 'inline-block';
 
-                updateStatus('⏳ Menghubungkan ke penerima...', 'waiting', 'sender-status');
+                updateStatus('🔗 Menghubungkan ke penerima...', 'waiting', 'sender-status');
 
-                setupSenderConnection();
-                
+                // Create peer if not exists
+                if (!peer) {
+                    peer = new Peer({
+                        config: {
+                            iceServers: [
+                                { urls: 'stun:stun.l.google.com:19302' },
+                                { urls: 'stun:stun1.l.google.com:19302' }
+                            ]
+                        }
+                    });
+
+                    await new Promise((resolve) => {
+                        peer.on('open', () => {
+                            console.log('Peer opened with ID:', peer.id);
+                            resolve();
+                        });
+                    });
+                }
+
+                // Call the receiver
+                console.log('Calling peer:', remotePeerId);
+                call = peer.call(remotePeerId, localStream);
+
+                call.on('stream', (remoteStream) => {
+                    // Receiver doesn't send stream, so this won't be called
+                    console.log('Remote stream received (unexpected)');
+                });
+
+                call.on('close', () => {
+                    console.log('Call closed');
+                    updateStatus('⚠️ Koneksi terputus.', 'error', 'sender-status');
+                });
+
+                call.on('error', (err) => {
+                    console.error('Call error:', err);
+                    updateStatus('❌ Error: ' + err.message, 'error', 'sender-status');
+                });
+
+                // Monitor connection
+                const checkConnection = setInterval(() => {
+                    if (call && call.peerConnection) {
+                        const state = call.peerConnection.connectionState;
+                        console.log('Connection state:', state);
+                        
+                        if (state === 'connected') {
+                            updateStatus('✅ Terhubung! Video sedang dikirim.', 'connected', 'sender-status');
+                            clearInterval(checkConnection);
+                        } else if (state === 'failed') {
+                            updateStatus('❌ Koneksi gagal. Pastikan Peer ID benar.', 'error', 'sender-status');
+                            clearInterval(checkConnection);
+                        }
+                    }
+                }, 1000);
+
+                setTimeout(() => clearInterval(checkConnection), 30000);
+
             } catch (error) {
-                console.error('Media capture error:', error);
+                console.error('Error:', error);
                 let errorMsg = error.message;
                 
                 if (error.name === 'NotAllowedError') {
                     errorMsg = 'Izin ditolak. Berikan akses ke layar/kamera.';
                 } else if (error.name === 'NotFoundError') {
                     errorMsg = 'Kamera tidak ditemukan.';
-                } else if (error.name === 'NotSupportedError') {
-                    errorMsg = 'Fitur tidak didukung di browser ini.';
-                } else if (error.name === 'TypeError') {
-                    errorMsg = 'Browser tidak mendukung fitur ini. Gunakan Chrome/Firefox desktop.';
                 }
                 
                 updateStatus('❌ ' + errorMsg, 'error', 'sender-status');
             }
         }
 
-        async function setupSenderConnection() {
-            const configuration = {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' }
-                ]
-            };
-
-            peerConnection = new RTCPeerConnection(configuration);
-            iceCandidatesQueue = [];
-
-            // Add tracks to connection
-            localStream.getTracks().forEach(track => {
-                console.log('Adding track:', track.kind);
-                peerConnection.addTrack(track, localStream);
-            });
-
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-                console.log('ICE candidate (sender):', event.candidate);
-                if (event.candidate) {
-                    iceCandidatesQueue.push(event.candidate);
-                    saveSignalData('sender', {
-                        answer: peerConnection.localDescription,
-                        candidates: iceCandidatesQueue
-                    });
-                }
-            };
-
-            // Monitor connection state
-            peerConnection.onconnectionstatechange = () => {
-                console.log('Connection state (sender):', peerConnection.connectionState);
-                if (peerConnection.connectionState === 'connected') {
-                    updateStatus('✅ Terhubung! Layar Anda sedang dibagikan.', 'connected', 'sender-status');
-                } else if (peerConnection.connectionState === 'failed') {
-                    updateStatus('❌ Koneksi gagal. Coba lagi.', 'error', 'sender-status');
-                }
-            };
-
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log('ICE connection state (sender):', peerConnection.iceConnectionState);
-            };
-
-            waitForOffer();
-        }
-
-        function waitForOffer() {
-            let attemptCount = 0;
-            
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
-
-            pollingInterval = setInterval(async () => {
-                attemptCount++;
-                
-                const signalData = getSignalData('receiver');
-                console.log(`Waiting for offer, attempt ${attemptCount}, found:`, signalData);
-                
-                if (signalData && signalData.offer) {
-                    try {
-                        console.log('Processing offer...');
-                        
-                        await peerConnection.setRemoteDescription(new RTCSessionDescription(signalData.offer));
-                        console.log('Remote description set');
-                        
-                        const answer = await peerConnection.createAnswer();
-                        await peerConnection.setLocalDescription(answer);
-                        console.log('Answer created');
-                        
-                        saveSignalData('sender', {
-                            answer: answer,
-                            candidates: iceCandidatesQueue
-                        });
-                        
-                        if (signalData.candidates && signalData.candidates.length > 0) {
-                            console.log('Adding ICE candidates:', signalData.candidates.length);
-                            for (const candidate of signalData.candidates) {
-                                try {
-                                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                                } catch (e) {
-                                    console.warn('Error adding ICE candidate:', e);
-                                }
-                            }
-                        }
-                        
-                        clearInterval(pollingInterval);
-                        updateStatus('🔗 Sedang menghubungkan...', 'waiting', 'sender-status');
-                    } catch (error) {
-                        console.error('Error processing offer:', error);
-                        updateStatus('❌ Error: ' + error.message, 'error', 'sender-status');
-                    }
-                }
-                
-                // Stop after 60 seconds
-                if (attemptCount > 60) {
-                    clearInterval(pollingInterval);
-                    updateStatus('⏱️ Timeout. Pastikan ID koneksi benar.', 'error', 'sender-status');
-                }
-            }, 1000);
-        }
-
         function stopReceiving() {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
+            if (call) {
+                call.close();
             }
             
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
+            if (peer) {
+                peer.destroy();
+                peer = null;
             }
             
             const video = document.getElementById('receivedVideo');
@@ -794,29 +656,24 @@
             container.style.display = 'none';
             container.classList.remove('has-video');
             document.getElementById('qrcode').innerHTML = '';
-            document.getElementById('connection-id-display').innerHTML = '';
+            document.getElementById('peer-id-display').innerHTML = '';
             document.getElementById('receiver-status').style.display = 'none';
             document.getElementById('stopReceiverBtn').style.display = 'none';
-            
-            if (connectionId) {
-                localStorage.removeItem(signalingKey + connectionId + '-receiver');
-                localStorage.removeItem(signalingKey + connectionId + '-sender');
-            }
         }
 
         function stopSharing() {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
-            
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
             }
             
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
+            if (call) {
+                call.close();
+            }
+            
+            if (peer) {
+                peer.destroy();
+                peer = null;
             }
             
             const video = document.getElementById('localVideo');
@@ -830,34 +687,29 @@
         // Check URL parameters for auto-connection
         window.addEventListener('load', () => {
             const params = new URLSearchParams(window.location.search);
-            const id = params.get('id');
+            const peerId = params.get('peer');
             
-            if (id) {
+            if (peerId) {
                 switchMode('sender');
-                document.getElementById('connectionId').value = id;
+                document.getElementById('remotePeerId').value = peerId;
                 document.querySelectorAll('.mode-btn')[1].classList.add('active');
                 document.querySelectorAll('.mode-btn')[0].classList.remove('active');
             }
             
-            // Check if screen share is supported and update UI
+            // Check screen share support
             checkScreenShareSupport();
         });
-        
+
         function checkScreenShareSupport() {
             const hasDisplayMedia = navigator.mediaDevices && 
                                    typeof navigator.mediaDevices.getDisplayMedia === 'function';
             
             const screenBtn = document.getElementById('screenShareBtn');
-            const cameraBtn = document.getElementById('cameraBtn');
             
             if (!hasDisplayMedia && screenBtn) {
                 screenBtn.disabled = true;
-                screenBtn.style.opacity = '0.5';
-                screenBtn.style.cursor = 'not-allowed';
                 screenBtn.innerHTML = '🖥️ Screen Share<br><small>❌ Tidak Didukung</small>';
-                
-                // Add tooltip
-                screenBtn.title = 'Browser ini tidak mendukung screen sharing. Gunakan Chrome/Firefox desktop atau gunakan mode Kamera.';
+                screenBtn.title = 'Browser tidak mendukung screen sharing. Gunakan mode Kamera.';
             }
         }
 
@@ -866,8 +718,11 @@
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            if (peerConnection) {
-                peerConnection.close();
+            if (call) {
+                call.close();
+            }
+            if (peer) {
+                peer.destroy();
             }
         });
     </script>
